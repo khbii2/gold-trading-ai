@@ -6,7 +6,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .core.database import init_db
-from .data.ingestion_ohlcv import update_data
 from .api.routes import signals, health
 
 
@@ -14,11 +13,7 @@ from .api.routes import signals, health
 async def lifespan(app: FastAPI):
     # ── Startup ──────────────────────────────────────────────────────────────
     init_db()
-    try:
-        result = update_data()
-        print(f"[startup] data: {result['fetched']} candles, {result['stored_new']} new")
-    except Exception as e:
-        print(f"[startup] data update failed: {e} — continuing with cached data")
+    print("[startup] DB ready — call POST /api/v1/model/train to train the model")
     yield
     # ── Shutdown ─────────────────────────────────────────────────────────────
 
