@@ -334,10 +334,18 @@ function switchTF(tf){
 // ── LOAD CHART ─────────────────────────────────────────────────────────────
 async function loadChart(tf){
   tf = tf || currentTF;
-  document.getElementById('chart-info').textContent='loading...';
+  document.getElementById('chart-info').innerHTML='<span class="spin"></span>loading '+tf+'...';
   clearOverlays();
+  // Clear all series data while loading so old TF data doesn't linger
+  try{candleSeries.setData([])}catch(e){}
+  try{ema9S.setData([]);ema20S.setData([]);ema50S.setData([]);ema200S.setData([])}catch(e){}
+
   try{
     const r = await fetch(API+'/api/v1/chart/data?tf='+tf+'&limit=300');
+    if(!r.ok){
+      document.getElementById('chart-info').textContent='error '+r.status+' — try another TF';
+      return;
+    }
     const d = await r.json();
 
     if(!d.candles||!d.candles.length){
