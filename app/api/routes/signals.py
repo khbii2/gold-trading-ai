@@ -3,10 +3,12 @@
 /api/v1/data     — إدارة البيانات
 """
 import json
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 from datetime import datetime
 from ...core.database import Session, Signal, Candle
-from ...data.ingestion_ohlcv import update_data, load_candles_df, fetch_gold_ohlcv
+from ...data.ingestion_ohlcv import update_data, load_candles_df, fetch_gold_ohlcv, store_candles
+from ...features.technical_features import build_features
+from ...models.gold_ohlcv_model import ohlcv_model
 from ...models.meta_decision_model import meta_model
 
 router = APIRouter()
@@ -106,3 +108,45 @@ def data_status():
         }
     finally:
         session.close()
+
+
+# ── Model training ────────────────────────────────────────────────────────────
+
+_training_status = {"running": False, "last_result": None}
+
+def _do_train():
+    _training_status["running"] = True
+    try:
+        result = update_data()
+        df = load_candles_df()
+        if df.empty:
+            df = fetch_gold_ohlcv(period="2y")
+            store_candles(df)
+            df = load_candles_df()
+        features_df = build_features(df)
+        metrics = ohlcv_model.train(features_df)
+        _training_status["last_result"] = {"status": "ok", "metrics": metrics}
+    except Exception as e:
+        _training_status["last_result"] = {"status": "error", "error": str(e)}
+    finally:
+        _training_status["running"] = False
+
+@router.post("/model/train")
+def train_model(background_tasks: BackgroundTasks):
+    """تدريب النموذج في الخلفية — استدعِه مرة واحدة بعد الـ deploy"""
+    if _training_status["running"]:
+        return {"status": "already_running"}
+    background_tasks.add_task(_do_train)
+    return {"status": "started", "message": "التدريب بدأ — استدعِ /model/status لمتابعة"}
+
+@router.get("/model/status")
+def model_status():
+    """حالة التدريب + metrics النموذج"""
+    if ohlcv_model.is_trained and not ohlcv_model.metrics:
+        ohlcv_model.load()
+    return {
+        "trained":         ohlcv_model.is_trained,
+        "training_running": _training_status["running"],
+        "last_result":     _training_status["last_result"],
+        "metrics":         ohlcv_model.metrics,
+    }
