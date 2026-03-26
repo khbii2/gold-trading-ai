@@ -102,15 +102,16 @@ import numpy as _np
 from ...features.indicators import ema as _ema
 from ...features.candle_patterns import detect_patterns as _det_pat
 from ...features.multi_tf_analysis import _support_resistance as _sr, _liquidity_levels as _liq
+from ...features.fibonacci import golden_zone_analysis as _fib_analysis
 
 
 @router.get("/chart/data")
 def chart_data(tf: str = "1h", limit: int = 300):
-    """OHLCV + EMAs + S/R + Liquidity + Patterns — كل فريم"""
+    """OHLCV + EMAs + S/R + Liquidity + Patterns + Fibonacci — كل فريم"""
     interval, period = TF_MAP.get(tf, ("1h", "60d"))
     try:
-        df = yf.download("GC=F", period=period, interval=interval,
-                         progress=False, auto_adjust=True)
+        df = _yf.download("GC=F", period=period, interval=interval,
+                          progress=False, auto_adjust=True)
         if isinstance(df, tuple): df = df[0]
         df.columns = [c[0].lower() if isinstance(c, tuple) else c.lower() for c in df.columns]
         df = df.dropna().tail(limit)
@@ -157,6 +158,9 @@ def chart_data(tf: str = "1h", limit: int = 300):
                 "text":     p["pattern"],
             })
 
+    # ── Fibonacci + Order Blocks ──
+    fib = _fib_analysis(df)
+
     return {
         "candles":     candles,
         "ema9":        _ema_series(9),
@@ -171,7 +175,49 @@ def chart_data(tf: str = "1h", limit: int = 300):
         "equal_lows":  liq.get("equal_lows",  []),
         "last_sweep":  liq.get("last_sweep"),
         "markers":     markers,
+        # Fibonacci data
+        "fib": {
+            "swing_high":    fib.get("swing_high"),
+            "swing_low":     fib.get("swing_low"),
+            "direction":     fib.get("direction"),
+            "levels":        fib.get("fib_levels", {}),
+            "golden_zone":   fib.get("golden_zone"),
+            "in_golden_zone": fib.get("in_golden_zone", False),
+            "order_blocks":  fib.get("order_blocks", []),
+            "ob_in_gz":      fib.get("ob_in_golden_zone", False),
+            "sweep":         fib.get("sweep_confirmed", False),
+            "quality":       fib.get("entry_quality", 0),
+            "signal":        fib.get("entry_signal"),
+            "conditions":    fib.get("conditions", []),
+        },
     }
+
+
+# ── Fibonacci standalone endpoint ─────────────────────────────────────────────
+
+@router.get("/fib/gold")
+def fib_analysis(tf: str = "15m"):
+    """
+    Fibonacci retracement + Golden Zone + Order Block analysis
+    Default: 15M (الفريم المستخدم في الاستراتيجية)
+    """
+    interval, period = TF_MAP.get(tf, ("15m", "20d"))
+    try:
+        df = _yf.download("GC=F", period=period, interval=interval,
+                          progress=False, auto_adjust=True)
+        if isinstance(df, tuple): df = df[0]
+        df.columns = [c[0].lower() if isinstance(c, tuple) else c.lower() for c in df.columns]
+        df = df.dropna()
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+    if df.empty:
+        raise HTTPException(404, "no data")
+
+    result = _fib_analysis(df)
+    result["tf"] = tf
+    result["price"] = float(df["close"].iloc[-1])
+    return result
 
 
 # ── Data management ───────────────────────────────────────────────────────────

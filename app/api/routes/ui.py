@@ -82,8 +82,28 @@ body{background:var(--bg);color:var(--text);font-family:'JetBrains Mono',monospa
 .tf-btn.active{background:rgba(212,175,55,.12);border-color:var(--gold);color:var(--gold2);font-weight:700}
 
 /* EMA legend */
-.ema-legend{display:flex;gap:10px;align-items:center;font-size:.6rem}
+.ema-legend{display:flex;gap:10px;align-items:center;font-size:.6rem;flex-wrap:wrap}
 .ema-dot{display:inline-block;width:14px;height:2px;border-radius:1px;margin-right:3px;vertical-align:middle}
+
+/* FIB CARD */
+.fib-card{margin:0 20px 14px;border-radius:12px;padding:14px 18px;background:var(--bg2);border:1px solid var(--border)}
+.fib-top{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px}
+.fib-title{font-size:.62rem;color:var(--gold);letter-spacing:2px;text-transform:uppercase}
+.fib-signal{font-size:1rem;font-weight:700;letter-spacing:2px}
+.fib-signal.buy{color:var(--green)}.fib-signal.sell{color:var(--red)}.fib-signal.wait{color:var(--gold)}
+.fib-quality{font-size:.7rem;padding:2px 10px;border-radius:4px;background:rgba(212,175,55,.08);color:var(--gold2);border:1px solid rgba(212,175,55,.2)}
+.fib-levels-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.fib-lvl{padding:2px 8px;border-radius:3px;font-size:.6rem;font-weight:700;border:1px solid}
+.fib-gz{background:rgba(212,175,55,.12);border-color:rgba(212,175,55,.4);color:var(--gold2)}
+.fib-normal{background:rgba(80,80,120,.1);border-color:var(--muted);color:var(--text)}
+.fib-conds{display:flex;flex-direction:column;gap:3px}
+.fib-cond{display:flex;align-items:center;gap:6px;font-size:.65rem}
+.fib-cond-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.fib-cond-dot.met{background:var(--green)}.fib-cond-dot.miss{background:var(--muted)}
+.fib-ob-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.ob-badge{padding:2px 9px;border-radius:3px;font-size:.6rem;font-weight:700}
+.ob-bull{background:rgba(0,229,160,.08);color:var(--green);border:1px solid rgba(0,229,160,.2)}
+.ob-bear{background:rgba(255,68,102,.08);color:var(--red);border:1px solid rgba(255,68,102,.2)}
 
 /* BOTTOM GRID */
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:0 20px 20px}
@@ -174,6 +194,22 @@ body{background:var(--bg);color:var(--text);font-family:'JetBrains Mono',monospa
   </div>
 </div>
 
+<!-- FIBONACCI CARD -->
+<div class="fib-card" id="fib-card">
+  <div class="fib-top">
+    <span class="fib-title">📐 Fibonacci — Golden Zone Entry (15M)</span>
+    <div style="display:flex;align-items:center;gap:10px">
+      <span class="fib-signal wait" id="fib-signal">— SCANNING</span>
+      <span class="fib-quality" id="fib-quality">Quality: —</span>
+    </div>
+  </div>
+  <div class="fib-levels-row" id="fib-levels-row">
+    <span style="color:var(--muted);font-size:.65rem">loading fib levels...</span>
+  </div>
+  <div class="fib-conds" id="fib-conds"></div>
+  <div class="fib-ob-row" id="fib-ob-row"></div>
+</div>
+
 <!-- CHART -->
 <div class="chart-outer">
   <div class="chart-hdr">
@@ -197,6 +233,9 @@ body{background:var(--bg);color:var(--text);font-family:'JetBrains Mono',monospa
         <span><span class="ema-dot" style="background:#4af"></span>EMA20</span>
         <span><span class="ema-dot" style="background:#ff9900"></span>EMA50</span>
         <span><span class="ema-dot" style="background:#ff4466"></span>EMA200</span>
+        <span><span class="ema-dot" style="background:rgba(212,175,55,.7);border:1px dashed #d4af37"></span>Fib GZ</span>
+        <span><span class="ema-dot" style="background:rgba(0,229,160,.5)"></span>Bull OB</span>
+        <span><span class="ema-dot" style="background:rgba(255,68,102,.5)"></span>Bear OB</span>
       </div>
       <span style="font-size:.65rem;color:var(--muted)" id="chart-info">loading...</span>
     </div>
@@ -229,7 +268,7 @@ const API = location.origin;
 const WS  = (location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/api/v1/ws/price';
 let chart, candleSeries, lastPrice=0, ws, wsR=0;
 let ema9S, ema20S, ema50S, ema200S;
-let srLines=[], liqLines=[];
+let srLines=[], liqLines=[], fibLines=[], obLines=[];
 let currentTF='1h';
 
 const TF_LABELS = {
@@ -263,9 +302,10 @@ function initChart(){
 
 // ── CLEAR OVERLAYS ─────────────────────────────────────────────────────────
 function clearOverlays(){
-  srLines.forEach(l=>{try{chart.removeSeries(l)}catch(e){}});
-  liqLines.forEach(l=>{try{chart.removeSeries(l)}catch(e){}});
-  srLines=[];liqLines=[];
+  [...srLines,...liqLines,...fibLines,...obLines].forEach(l=>{
+    try{chart.removeSeries(l)}catch(e){}
+  });
+  srLines=[];liqLines=[];fibLines=[];obLines=[];
 }
 
 // ── ADD PRICE LINE HELPER ──────────────────────────────────────────────────
@@ -352,15 +392,78 @@ async function loadChart(tf){
       liqLines.push(s);
     });
 
-    // Pattern markers
-    if(d.markers && d.markers.length){
-      candleSeries.setMarkers(d.markers);
+    // ── Fibonacci Levels ──
+    const fib = d.fib || {};
+    if(fib.levels && fib.swing_high){
+      const fibColors = {
+        '0.0':   {color:'rgba(180,180,220,0.35)', lw:1, style:0},
+        '0.236': {color:'rgba(180,180,220,0.35)', lw:1, style:2},
+        '0.382': {color:'rgba(100,200,255,0.5)',  lw:1, style:2},
+        '0.5':   {color:'rgba(255,255,255,0.4)',  lw:1, style:0},
+        '0.618': {color:'rgba(212,175,55,0.85)',  lw:2, style:0},   // Golden Zone top
+        '0.705': {color:'rgba(212,175,55,0.5)',   lw:1, style:2},
+        '0.786': {color:'rgba(212,175,55,0.85)',  lw:2, style:0},   // Golden Zone bottom
+        '1.0':   {color:'rgba(180,180,220,0.35)', lw:1, style:0},
+        '1.272': {color:'rgba(100,200,255,0.3)',  lw:1, style:2},
+        '1.618': {color:'rgba(100,200,255,0.3)',  lw:1, style:2},
+      };
+      Object.entries(fib.levels).forEach(([lvl, price])=>{
+        const cfg = fibColors[lvl] || {color:'rgba(200,200,200,0.3)',lw:1,style:2};
+        const s = chart.addLineSeries({
+          color:cfg.color, lineWidth:cfg.lw, lineStyle:cfg.style,
+          priceLineVisible:false, lastValueVisible:true,
+          title: lvl==='0.618'||lvl==='0.786' ? 'GZ '+lvl : lvl,
+          crosshairMarkerVisible:false,
+        });
+        s.setData([{time:t0,value:price},{time:t1,value:price}]);
+        fibLines.push(s);
+      });
+
+      // Swing High/Low markers
+      const swingMarkers = [];
+      // Find candle time for swing high (approximate using price)
+      const shIdx = d.candles.findIndex(c=>Math.abs(c.high-fib.swing_high)<2);
+      const slIdx = d.candles.findIndex(c=>Math.abs(c.low -fib.swing_low )<2);
+      if(shIdx>=0) swingMarkers.push({time:d.candles[shIdx].time,position:'aboveBar',color:'#d4af37',shape:'circle',text:'SH'});
+      if(slIdx>=0) swingMarkers.push({time:d.candles[slIdx].time,position:'belowBar',color:'#d4af37',shape:'circle',text:'SL'});
+
+      // Combine with pattern markers
+      const allMarkers = [...(d.markers||[]), ...swingMarkers]
+        .sort((a,b)=>a.time-b.time);
+      candleSeries.setMarkers(allMarkers);
     } else {
-      candleSeries.setMarkers([]);
+      // Pattern markers only
+      candleSeries.setMarkers(d.markers||[]);
+    }
+
+    // ── Order Blocks ──
+    if(fib.order_blocks && fib.order_blocks.length){
+      fib.order_blocks.forEach(ob=>{
+        const isBull = ob.type==='bullish';
+        const topS = chart.addLineSeries({
+          color: isBull?'rgba(0,229,160,0.7)':'rgba(255,68,102,0.7)',
+          lineWidth:1, lineStyle:0,
+          priceLineVisible:false, lastValueVisible:false,
+          title: isBull?'OB↑':'OB↓',
+          crosshairMarkerVisible:false,
+        });
+        const botS = chart.addLineSeries({
+          color: isBull?'rgba(0,229,160,0.4)':'rgba(255,68,102,0.4)',
+          lineWidth:1, lineStyle:2,
+          priceLineVisible:false, lastValueVisible:false,
+          crosshairMarkerVisible:false,
+        });
+        topS.setData([{time:t0,value:ob.top},   {time:t1,value:ob.top}]);
+        botS.setData([{time:t0,value:ob.bottom},{time:t1,value:ob.bottom}]);
+        obLines.push(topS,botS);
+      });
     }
 
     chart.timeScale().fitContent();
     document.getElementById('chart-info').textContent=d.candles.length+' candles · '+TF_LABELS[tf];
+
+    // ── Update Fib Card ──
+    updateFibCard(fib);
 
   }catch(e){
     document.getElementById('chart-info').textContent='error: '+e.message;
@@ -396,6 +499,68 @@ function updatePrice(d){
   }
   lastPrice=p;
   document.getElementById('upd').textContent=new Date().toLocaleTimeString();
+}
+
+// ── FIB CARD UPDATE ───────────────────────────────────────────────────────
+function updateFibCard(fib){
+  if(!fib||!fib.swing_high) return;
+
+  const sig = fib.signal || 'wait';
+  const sigEl = document.getElementById('fib-signal');
+  sigEl.textContent = sig==='buy'? '▲ BUY SETUP — شراء' :
+                      sig==='sell'?'▼ SELL SETUP — بيع' :
+                                   '── SCANNING — انتظار';
+  sigEl.className = 'fib-signal ' + sig;
+  document.getElementById('fib-quality').textContent = 'Quality: ' + (fib.quality||0) + '/100';
+
+  // Levels row
+  const gz = fib.golden_zone || {};
+  const levelsHtml = Object.entries(fib.levels||{}).map(([lvl,price])=>{
+    const isGZ = (lvl==='0.618'||lvl==='0.705'||lvl==='0.786');
+    return `<span class="fib-lvl ${isGZ?'fib-gz':'fib-normal'}">${lvl} · $${price.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`;
+  }).join('');
+  document.getElementById('fib-levels-row').innerHTML =
+    `<span class="fib-lvl" style="background:rgba(212,175,55,.06);border-color:rgba(212,175,55,.3);color:var(--gold);font-size:.58rem">
+      ${fib.direction==='up'?'↑ BULLISH':'↓ BEARISH'} &nbsp;|&nbsp;
+      SL $${fib.swing_low} → SH $${fib.swing_high}
+    </span>` + levelsHtml;
+
+  // Conditions
+  document.getElementById('fib-conds').innerHTML =
+    (fib.conditions||[]).map(c=>
+      `<div class="fib-cond">
+        <div class="fib-cond-dot ${c.met?'met':'miss'}"></div>
+        <span style="color:${c.met?'#ccc':'var(--muted)'}">${c.detail}</span>
+        <span style="color:${c.met?'var(--green)':'var(--muted)'};margin-left:auto">${c.met?'+':''}${c.weight}</span>
+      </div>`
+    ).join('');
+
+  // Order Blocks
+  document.getElementById('fib-ob-row').innerHTML =
+    (fib.order_blocks||[]).map(ob=>
+      `<span class="ob-badge ${ob.type==='bullish'?'ob-bull':'ob-bear'}">
+        ${ob.type==='bullish'?'▲':'▼'} OB $${ob.bottom}–$${ob.top}
+      </span>`
+    ).join('');
+}
+
+// ── STANDALONE FIB LOAD (15M) ─────────────────────────────────────────────
+async function loadFib(){
+  try{
+    const r = await fetch(API+'/api/v1/fib/gold?tf=15m');
+    const d = await r.json();
+    updateFibCard({
+      signal:        d.entry_signal,
+      quality:       d.entry_quality,
+      direction:     d.direction,
+      swing_high:    d.swing_high,
+      swing_low:     d.swing_low,
+      levels:        d.fib_levels,
+      golden_zone:   d.golden_zone,
+      order_blocks:  d.order_blocks,
+      conditions:    d.conditions,
+    });
+  }catch(e){}
 }
 
 // ── MULTI-TF ANALYSIS ─────────────────────────────────────────────────────
@@ -522,9 +687,11 @@ connectWS();
 loadChart('1h');
 loadAnalysis();
 loadHealth();
+loadFib();
 
 setInterval(loadAnalysis, 180000);
 setInterval(()=>loadChart(currentTF), 300000);
+setInterval(loadFib, 120000);  // refresh fib every 2 min
 </script>
 </body></html>"""
 
