@@ -10,34 +10,25 @@ Monthly → Weekly → Daily → H4 → H1 → 15M → 5M
 - شموع انعكاسية
 - إشارة دخول مشروطة
 """
-import yfinance as yf
 import pandas as pd
 import numpy as np
 from datetime import datetime
 from .indicators import ema, rsi, macd, atr
 from .candle_patterns import detect_patterns
+from ..data.provider import fetch_ohlcv
 
-SYMBOL = "XAUUSD=X"
+# الفريمات المطلوبة (مفاتيح للـ provider)
+TIMEFRAMES = ["monthly", "weekly", "daily", "h4", "h1", "m15", "m5"]
 
-# الفريمات المطلوبة
-TIMEFRAMES = {
-    "monthly": ("1mo", "5y"),
-    "weekly":  ("1wk", "2y"),
-    "daily":   ("1d",  "1y"),
-    "h4":      ("4h",  "60d"),
-    "h1":      ("1h",  "30d"),
-    "m15":     ("15m", "20d"),
-    "m5":      ("5m",  "7d"),
+# عدد الشموع لكل فريم
+TF_LIMIT = {
+    "monthly": 60, "weekly": 104, "daily": 365,
+    "h4": 300, "h1": 300, "m15": 300, "m5": 300,
 }
 
 
-def _fetch(interval: str, period: str) -> pd.DataFrame:
-    df = yf.download(SYMBOL, period=period, interval=interval,
-                     progress=False, auto_adjust=True)
-    if isinstance(df, tuple): df = df[0]
-    if df.empty: return pd.DataFrame()
-    df.columns = [c[0].lower() if isinstance(c, tuple) else c.lower() for c in df.columns]
-    return df.dropna()
+def _fetch(tf_key: str) -> pd.DataFrame:
+    return fetch_ohlcv(tf_key, limit=TF_LIMIT.get(tf_key, 300))
 
 
 def _ema_trend(df: pd.DataFrame) -> dict:
@@ -341,9 +332,9 @@ def full_analysis() -> dict:
     التحليل الكامل — يجلب جميع الفريمات ويحلل ويعطي إشارة دخول
     """
     analyses = {}
-    for name, (interval, period) in TIMEFRAMES.items():
+    for name in TIMEFRAMES:
         try:
-            df = _fetch(interval, period)
+            df = _fetch(name)
             analyses[name] = _analyze_tf(df, name)
         except Exception as e:
             analyses[name] = {"error": str(e)}
@@ -351,7 +342,7 @@ def full_analysis() -> dict:
     # السيولة من H1
     liq = {}
     try:
-        df_h1 = _fetch("1h", "30d")
+        df_h1 = _fetch("h1")
         if not df_h1.empty:
             liq = _liquidity_levels(df_h1)
     except Exception:

@@ -87,54 +87,26 @@ def signal_history(limit: int = 100):
 
 # ── Chart data ───────────────────────────────────────────────────────────────
 
-TF_MAP = {
-    "1m":  ("1m",  "5d"),
-    "5m":  ("5m",  "7d"),
-    "15m": ("15m", "20d"),
-    "1h":  ("1h",  "60d"),
-    "4h":  ("1h",  "60d"),   # fetch 1h then resample to 4h
-    "1d":  ("1d",  "2y"),
-    "1w":  ("1wk", "5y"),
-}
-
-import yfinance as _yf
 import numpy as _np
 from ...features.indicators import ema as _ema
 from ...features.candle_patterns import detect_patterns as _det_pat
 from ...features.multi_tf_analysis import _support_resistance as _sr, _liquidity_levels as _liq
 from ...features.fibonacci import golden_zone_analysis as _fib_analysis
+from ...data.provider import fetch_ohlcv as _fetch_ohlcv
 
-
-def _fetch_df(interval: str, period: str) -> "pd.DataFrame":
-    import pandas as _pd
-    df = _yf.download("XAUUSD=X", period=period, interval=interval,
-                      progress=False, auto_adjust=True)
-    if isinstance(df, tuple): df = df[0]
-    if df.empty:
-        return _pd.DataFrame()
-    # flatten MultiIndex columns
-    df.columns = [
-        (c[0].lower() if isinstance(c, tuple) else c.lower())
-        for c in df.columns
-    ]
-    return df.dropna()
+# TF key → provider key mapping
+_TF_KEY = {
+    "1m": "1m", "5m": "5m", "15m": "15m",
+    "1h": "1h", "4h": "4h", "1d":  "1d", "1w": "1w",
+}
 
 
 @router.get("/chart/data")
 def chart_data(tf: str = "1h", limit: int = 300):
     """OHLCV + EMAs + S/R + Liquidity + Patterns + Fibonacci — كل فريم"""
-    interval, period = TF_MAP.get(tf, ("1h", "60d"))
+    provider_tf = _TF_KEY.get(tf, "1h")
     try:
-        df = _fetch_df(interval, period)
-        # 4h: resample 1h → 4h
-        if tf == "4h" and not df.empty:
-            import pandas as _pd
-            df.index = _pd.to_datetime(df.index)
-            df = df.resample("4h").agg({
-                "open": "first", "high": "max",
-                "low": "min",   "close": "last", "volume": "sum"
-            }).dropna()
-        df = df.tail(limit)
+        df = _fetch_ohlcv(provider_tf, limit=limit, use_cache=True)
     except Exception as e:
         raise HTTPException(500, str(e))
 
@@ -221,17 +193,13 @@ def fib_analysis(tf: str = "15m"):
     Fibonacci retracement + Golden Zone + Order Block analysis
     Default: 15M (الفريم المستخدم في الاستراتيجية)
     """
-    interval, period = TF_MAP.get(tf, ("15m", "20d"))
+    provider_tf = _TF_KEY.get(tf, "15m")
     try:
-        df = _yf.download("XAUUSD=X", period=period, interval=interval,
-                          progress=False, auto_adjust=True)
-        if isinstance(df, tuple): df = df[0]
-        df.columns = [c[0].lower() if isinstance(c, tuple) else c.lower() for c in df.columns]
-        df = df.dropna()
+        df = _fetch_ohlcv(provider_tf, limit=300)
     except Exception as e:
         raise HTTPException(500, str(e))
 
-    if df.empty:
+    if df is None or df.empty:
         raise HTTPException(404, "no data")
 
     result = _fib_analysis(df)

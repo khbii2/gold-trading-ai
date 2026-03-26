@@ -10,7 +10,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 router = APIRouter()
 
 _cache: dict = {"price": 0.0, "prev": 0.0, "high": 0.0, "low": 0.0, "change_pct": 0.0, "ts": 0.0}
-_TICKER = yf.Ticker("XAUUSD=X")
+_TICKER = yf.Ticker("GC=F")
 
 
 def _refresh_price():
@@ -37,7 +37,7 @@ def _refresh_price():
     except Exception:
         # fallback to 1m bar
         try:
-            df = yf.download("XAUUSD=X", period="1d", interval="1m",
+            df = yf.download("GC=F", period="1d", interval="1m",
                              progress=False, auto_adjust=True)
             if isinstance(df, tuple): df = df[0]
             if df.empty: return
