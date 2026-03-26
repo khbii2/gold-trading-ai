@@ -1,6 +1,6 @@
 """
 Data Ingestion — OHLCV
-مصدر البيانات: yfinance (GC=F — Gold Futures)
+مصدر البيانات: yfinance (XAUUSD=X — Gold Spot)
 الترقية المستقبلية: استبدل fetch_gold_ohlcv بـ WebSocket tick provider
 """
 import yfinance as yf

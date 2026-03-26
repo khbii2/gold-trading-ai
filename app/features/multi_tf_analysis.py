@@ -17,7 +17,7 @@ from datetime import datetime
 from .indicators import ema, rsi, macd, atr
 from .candle_patterns import detect_patterns
 
-SYMBOL = "GC=F"
+SYMBOL = "XAUUSD=X"
 
 # الفريمات المطلوبة
 TIMEFRAMES = {

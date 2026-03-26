@@ -110,7 +110,7 @@ def chart_data(tf: str = "1h", limit: int = 300):
     """OHLCV + EMAs + S/R + Liquidity + Patterns + Fibonacci — كل فريم"""
     interval, period = TF_MAP.get(tf, ("1h", "60d"))
     try:
-        df = _yf.download("GC=F", period=period, interval=interval,
+        df = _yf.download("XAUUSD=X", period=period, interval=interval,
                           progress=False, auto_adjust=True)
         if isinstance(df, tuple): df = df[0]
         df.columns = [c[0].lower() if isinstance(c, tuple) else c.lower() for c in df.columns]
@@ -203,7 +203,7 @@ def fib_analysis(tf: str = "15m"):
     """
     interval, period = TF_MAP.get(tf, ("15m", "20d"))
     try:
-        df = _yf.download("GC=F", period=period, interval=interval,
+        df = _yf.download("XAUUSD=X", period=period, interval=interval,
                           progress=False, auto_adjust=True)
         if isinstance(df, tuple): df = df[0]
         df.columns = [c[0].lower() if isinstance(c, tuple) else c.lower() for c in df.columns]

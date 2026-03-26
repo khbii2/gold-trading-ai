@@ -17,7 +17,7 @@ def _refresh_price():
     if now - _cache["ts"] < 8:
         return
     try:
-        df = yf.download("GC=F", period="2d", interval="1m", progress=False, auto_adjust=True)
+        df = yf.download("XAUUSD=X", period="2d", interval="1m", progress=False, auto_adjust=True)
         if isinstance(df, tuple): df = df[0]
         if df.empty: return
         df.columns = [c[0].lower() if isinstance(c, tuple) else c.lower() for c in df.columns]

@@ -16,7 +16,7 @@ class Settings:
     DATA_DIR:  Path = DATA_DIR
 
     # Data source
-    SYMBOL:         str = "GC=F"       # Gold Futures — yfinance
+    SYMBOL:         str = "XAUUSD=X"       # Gold Spot — yfinance (matches MT5/broker XAUUSD)
     TIMEFRAME:      str = "1h"
     HISTORY_PERIOD: str = "2y"
 
