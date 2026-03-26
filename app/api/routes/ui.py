@@ -71,9 +71,19 @@ body{background:var(--bg);color:var(--text);font-family:'JetBrains Mono',monospa
 
 /* CHART */
 .chart-outer{margin:0 20px 14px;border-radius:12px;overflow:hidden;border:1px solid var(--border)}
-.chart-hdr{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg2);border-bottom:1px solid var(--border)}
+.chart-hdr{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:10px 14px;background:var(--bg2);border-bottom:1px solid var(--border)}
 .chart-ttl{font-size:.72rem;color:var(--gold);letter-spacing:1px}
-#chart{height:400px;width:100%}
+#chart{height:420px;width:100%}
+
+/* TF SWITCHER */
+.tf-switcher{display:flex;gap:4px;align-items:center}
+.tf-btn{padding:3px 10px;border-radius:5px;border:1px solid var(--muted);background:transparent;color:var(--muted);font-family:inherit;font-size:.65rem;cursor:pointer;transition:.15s;letter-spacing:.5px}
+.tf-btn:hover{border-color:var(--gold);color:var(--gold)}
+.tf-btn.active{background:rgba(212,175,55,.12);border-color:var(--gold);color:var(--gold2);font-weight:700}
+
+/* EMA legend */
+.ema-legend{display:flex;gap:10px;align-items:center;font-size:.6rem}
+.ema-dot{display:inline-block;width:14px;height:2px;border-radius:1px;margin-right:3px;vertical-align:middle}
 
 /* BOTTOM GRID */
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:0 20px 20px}
@@ -167,8 +177,29 @@ body{background:var(--bg);color:var(--text);font-family:'JetBrains Mono',monospa
 <!-- CHART -->
 <div class="chart-outer">
   <div class="chart-hdr">
-    <span class="chart-ttl">XAUUSD · 1H · Candlestick</span>
-    <span style="font-size:.65rem;color:var(--muted)" id="chart-info">loading...</span>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <span class="chart-ttl" id="chart-ttl">XAUUSD · 1H</span>
+      <!-- TF Switcher -->
+      <div class="tf-switcher" id="tf-switcher">
+        <button class="tf-btn" onclick="switchTF('1m')">1M</button>
+        <button class="tf-btn" onclick="switchTF('5m')">5M</button>
+        <button class="tf-btn" onclick="switchTF('15m')">15M</button>
+        <button class="tf-btn active" id="tfbtn-1h" onclick="switchTF('1h')">1H</button>
+        <button class="tf-btn" onclick="switchTF('4h')">4H</button>
+        <button class="tf-btn" onclick="switchTF('1d')">D1</button>
+        <button class="tf-btn" onclick="switchTF('1w')">W1</button>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <!-- EMA Legend -->
+      <div class="ema-legend">
+        <span><span class="ema-dot" style="background:#d4af37"></span>EMA9</span>
+        <span><span class="ema-dot" style="background:#4af"></span>EMA20</span>
+        <span><span class="ema-dot" style="background:#ff9900"></span>EMA50</span>
+        <span><span class="ema-dot" style="background:#ff4466"></span>EMA200</span>
+      </div>
+      <span style="font-size:.65rem;color:var(--muted)" id="chart-info">loading...</span>
+    </div>
   </div>
   <div id="chart"></div>
 </div>
@@ -196,9 +227,17 @@ body{background:var(--bg);color:var(--text);font-family:'JetBrains Mono',monospa
 <script>
 const API = location.origin;
 const WS  = (location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/api/v1/ws/price';
-let chart, series, lastPrice=0, ws, wsR=0;
+let chart, candleSeries, lastPrice=0, ws, wsR=0;
+let ema9S, ema20S, ema50S, ema200S;
+let srLines=[], liqLines=[];
+let currentTF='1h';
 
-// ── CHART ─────────────────────────────────────────────────────────────────
+const TF_LABELS = {
+  '1m':'1M','5m':'5M','15m':'15M',
+  '1h':'1H','4h':'4H','1d':'D1','1w':'W1'
+};
+
+// ── CHART INIT ─────────────────────────────────────────────────────────────
 function initChart(){
   chart = LightweightCharts.createChart(document.getElementById('chart'),{
     layout:{background:{color:'#0a0a1a'},textColor:'#556'},
@@ -207,25 +246,125 @@ function initChart(){
     timeScale:{borderColor:'rgba(212,175,55,.08)',timeVisible:true},
     crosshair:{mode:1},
   });
-  series = chart.addCandlestickSeries({
+  candleSeries = chart.addCandlestickSeries({
     upColor:'#00e5a0',downColor:'#ff4466',
     borderUpColor:'#00e5a0',borderDownColor:'#ff4466',
     wickUpColor:'rgba(0,229,160,.45)',wickDownColor:'rgba(255,68,102,.45)',
   });
+  // EMA series
+  ema9S   = chart.addLineSeries({color:'#d4af37',lineWidth:1,priceLineVisible:false,lastValueVisible:false});
+  ema20S  = chart.addLineSeries({color:'#44aaff',lineWidth:1,priceLineVisible:false,lastValueVisible:false});
+  ema50S  = chart.addLineSeries({color:'#ff9900',lineWidth:1,priceLineVisible:false,lastValueVisible:false});
+  ema200S = chart.addLineSeries({color:'#ff4466',lineWidth:1,priceLineVisible:false,lastValueVisible:false});
+
   new ResizeObserver(()=>chart.applyOptions({width:document.getElementById('chart').clientWidth}))
     .observe(document.getElementById('chart'));
 }
 
-async function loadChart(){
+// ── CLEAR OVERLAYS ─────────────────────────────────────────────────────────
+function clearOverlays(){
+  srLines.forEach(l=>{try{chart.removeSeries(l)}catch(e){}});
+  liqLines.forEach(l=>{try{chart.removeSeries(l)}catch(e){}});
+  srLines=[];liqLines=[];
+}
+
+// ── ADD PRICE LINE HELPER ──────────────────────────────────────────────────
+function addHLine(price, color, style, lineWidth){
+  // Use a LineSeries with 2 points spanning the full chart as a price line
+  const s = chart.addLineSeries({
+    color:color,lineWidth:lineWidth||1,
+    lineStyle:style||2, // 2=dashed
+    priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,
+  });
+  // We'll set it with a constant value; the time range will be set later
+  return s;
+}
+
+// ── TF SWITCHER ────────────────────────────────────────────────────────────
+function switchTF(tf){
+  currentTF = tf;
+  // Update button states
+  document.querySelectorAll('.tf-btn').forEach(b=>{
+    b.classList.toggle('active', b.textContent===TF_LABELS[tf]);
+  });
+  document.getElementById('chart-ttl').textContent='XAUUSD · '+TF_LABELS[tf];
+  loadChart(tf);
+}
+
+// ── LOAD CHART ─────────────────────────────────────────────────────────────
+async function loadChart(tf){
+  tf = tf || currentTF;
+  document.getElementById('chart-info').textContent='loading...';
+  clearOverlays();
   try{
-    const r = await fetch(API+'/api/v1/chart/data?limit=300');
+    const r = await fetch(API+'/api/v1/chart/data?tf='+tf+'&limit=300');
     const d = await r.json();
-    if(Array.isArray(d)&&d.length){
-      series.setData(d);
-      chart.timeScale().fitContent();
-      document.getElementById('chart-info').textContent=d.length+' candles';
+
+    if(!d.candles||!d.candles.length){
+      document.getElementById('chart-info').textContent='no data';
+      return;
     }
-  }catch(e){}
+
+    // Candles
+    candleSeries.setData(d.candles);
+
+    // EMAs
+    if(d.ema9  && d.ema9.length)   ema9S.setData(d.ema9);
+    if(d.ema20 && d.ema20.length)  ema20S.setData(d.ema20);
+    if(d.ema50 && d.ema50.length)  ema50S.setData(d.ema50);
+    if(d.ema200&& d.ema200.length) ema200S.setData(d.ema200);
+
+    // Build time range from candles
+    const times = d.candles.map(c=>c.time);
+    const t0=times[0], t1=times[times.length-1];
+
+    // S/R lines
+    (d.resistances||[]).forEach(p=>{
+      const s=addHLine(p,'rgba(255,255,255,0.45)',2,1);
+      s.setData([{time:t0,value:p},{time:t1,value:p}]);
+      srLines.push(s);
+    });
+    (d.supports||[]).forEach(p=>{
+      const s=addHLine(p,'rgba(255,255,255,0.45)',2,1);
+      s.setData([{time:t0,value:p},{time:t1,value:p}]);
+      srLines.push(s);
+    });
+
+    // Liquidity lines
+    (d.buy_side||[]).forEach(p=>{
+      const s=addHLine(p,'rgba(0,229,160,0.6)',2,1);
+      s.setData([{time:t0,value:p},{time:t1,value:p}]);
+      liqLines.push(s);
+    });
+    (d.sell_side||[]).forEach(p=>{
+      const s=addHLine(p,'rgba(255,68,102,0.6)',2,1);
+      s.setData([{time:t0,value:p},{time:t1,value:p}]);
+      liqLines.push(s);
+    });
+    (d.equal_highs||[]).forEach(p=>{
+      const s=addHLine(p,'rgba(68,170,255,0.5)',1,1);
+      s.setData([{time:t0,value:p},{time:t1,value:p}]);
+      liqLines.push(s);
+    });
+    (d.equal_lows||[]).forEach(p=>{
+      const s=addHLine(p,'rgba(68,170,255,0.5)',1,1);
+      s.setData([{time:t0,value:p},{time:t1,value:p}]);
+      liqLines.push(s);
+    });
+
+    // Pattern markers
+    if(d.markers && d.markers.length){
+      candleSeries.setMarkers(d.markers);
+    } else {
+      candleSeries.setMarkers([]);
+    }
+
+    chart.timeScale().fitContent();
+    document.getElementById('chart-info').textContent=d.candles.length+' candles · '+TF_LABELS[tf];
+
+  }catch(e){
+    document.getElementById('chart-info').textContent='error: '+e.message;
+  }
 }
 
 // ── WEBSOCKET ─────────────────────────────────────────────────────────────
@@ -251,16 +390,15 @@ function updatePrice(d){
   ce.className='pchg '+(chg>=0?'up':'down');ce.style.display='inline';
   if(d.high) document.getElementById('p-h').textContent=fmt(d.high);
   if(d.low)  document.getElementById('p-l').textContent=fmt(d.low);
-  if(series&&lastPrice!==p){
+  if(candleSeries&&lastPrice!==p){
     const now=Math.floor(Date.now()/1000),ht=Math.floor(now/3600)*3600;
-    try{series.update({time:ht,open:pr,high:Math.max(pr,p),low:Math.min(pr,p),close:p})}catch(e){}
+    try{candleSeries.update({time:ht,open:pr,high:Math.max(pr,p),low:Math.min(pr,p),close:p})}catch(e){}
   }
   lastPrice=p;
   document.getElementById('upd').textContent=new Date().toLocaleTimeString();
 }
 
 // ── MULTI-TF ANALYSIS ─────────────────────────────────────────────────────
-const TF_LABELS = {monthly:'MONTHLY',weekly:'WEEKLY',daily:'DAILY',h4:'H4',h1:'H1',m15:'15M',m5:'5M'};
 const TF_ICONS = {bullish:'▲',bearish:'▼',neutral:'─',uptrend:'▲',downtrend:'▼',ranging:'↔'};
 
 async function loadAnalysis(){
@@ -305,10 +443,8 @@ async function loadAnalysis(){
       if(el){
         el.textContent=(TF_ICONS[trend]||'─')+' '+(trend||'—').toUpperCase();
         el.className='tf-trend '+trend;
-        // RSI sub
         const rsiEl=document.getElementById('rsi-'+k);
         if(rsiEl&&tf.rsi) rsiEl.textContent='RSI '+tf.rsi.toFixed(0);
-        // Pattern sub
         const patEl=document.getElementById('pat-'+k);
         if(patEl){
           const pats=tf.patterns||[];
@@ -383,13 +519,12 @@ async function trainModel(){
 // ── INIT ──────────────────────────────────────────────────────────────────
 initChart();
 connectWS();
-loadChart();
+loadChart('1h');
 loadAnalysis();
 loadHealth();
 
-// Refresh analysis every 3 min, chart every 5 min
 setInterval(loadAnalysis, 180000);
-setInterval(loadChart,    300000);
+setInterval(()=>loadChart(currentTF), 300000);
 </script>
 </body></html>"""
 

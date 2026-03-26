@@ -87,27 +87,91 @@ def signal_history(limit: int = 100):
 
 # ── Chart data ───────────────────────────────────────────────────────────────
 
+TF_MAP = {
+    "1m":  ("1m",  "5d"),
+    "5m":  ("5m",  "7d"),
+    "15m": ("15m", "20d"),
+    "1h":  ("1h",  "60d"),
+    "4h":  ("4h",  "60d"),
+    "1d":  ("1d",  "2y"),
+    "1w":  ("1wk", "5y"),
+}
+
+import yfinance as _yf
+import numpy as _np
+from ...features.indicators import ema as _ema
+from ...features.candle_patterns import detect_patterns as _det_pat
+from ...features.multi_tf_analysis import _support_resistance as _sr, _liquidity_levels as _liq
+
+
 @router.get("/chart/data")
-def chart_data(limit: int = 300):
-    """OHLCV candles للشارت — يرجع من DB أو yfinance مباشرة"""
-    df = load_candles_df()
+def chart_data(tf: str = "1h", limit: int = 300):
+    """OHLCV + EMAs + S/R + Liquidity + Patterns — كل فريم"""
+    interval, period = TF_MAP.get(tf, ("1h", "60d"))
+    try:
+        df = yf.download("GC=F", period=period, interval=interval,
+                         progress=False, auto_adjust=True)
+        if isinstance(df, tuple): df = df[0]
+        df.columns = [c[0].lower() if isinstance(c, tuple) else c.lower() for c in df.columns]
+        df = df.dropna().tail(limit)
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
     if df.empty:
-        try:
-            df = fetch_gold_ohlcv(period="30d")
-        except Exception as e:
-            raise HTTPException(500, str(e))
-    df = df.tail(limit)
+        raise HTTPException(404, "no data")
+
+    c = df["close"]
+
+    # ── Candles ──
     candles = []
     for ts, row in df.iterrows():
         t = int(ts.timestamp()) if hasattr(ts, "timestamp") else int(ts)
-        candles.append({
-            "time":  t,
-            "open":  round(float(row["open"]),  2),
-            "high":  round(float(row["high"]),  2),
-            "low":   round(float(row["low"]),   2),
-            "close": round(float(row["close"]), 2),
-        })
-    return candles
+        candles.append({"time": t, "open": round(float(row["open"]), 2),
+                        "high": round(float(row["high"]), 2),
+                        "low":  round(float(row["low"]),  2),
+                        "close": round(float(row["close"]), 2)})
+
+    times = [cd["time"] for cd in candles]
+
+    def _ema_series(period):
+        vals = _ema(c, period).values
+        return [{"time": t, "value": round(float(v), 2)}
+                for t, v in zip(times, vals) if not _np.isnan(v)]
+
+    # ── S/R + Liquidity ──
+    sr  = _sr(df)
+    liq = _liq(df)
+
+    # ── Pattern markers ──
+    markers = []
+    for i in range(2, len(df)):
+        chunk = df.iloc[max(0, i-2): i+1]
+        pats  = _det_pat(chunk)
+        for p in pats:
+            t = candles[i]["time"]
+            markers.append({
+                "time":     t,
+                "position": "belowBar" if p["direction"] == "bullish" else "aboveBar",
+                "color":    "#00e5a0" if p["direction"] == "bullish" else "#ff4466",
+                "shape":    "arrowUp" if p["direction"] == "bullish" else "arrowDown",
+                "text":     p["pattern"],
+            })
+
+    return {
+        "candles":     candles,
+        "ema9":        _ema_series(9),
+        "ema20":       _ema_series(20),
+        "ema50":       _ema_series(50),
+        "ema200":      _ema_series(200),
+        "resistances": sr.get("resistances", []),
+        "supports":    sr.get("supports",    []),
+        "buy_side":    liq.get("buy_side",   [])[:4],
+        "sell_side":   liq.get("sell_side",  [])[:4],
+        "equal_highs": liq.get("equal_highs", []),
+        "equal_lows":  liq.get("equal_lows",  []),
+        "last_sweep":  liq.get("last_sweep"),
+        "markers":     markers,
+    }
 
 
 # ── Data management ───────────────────────────────────────────────────────────
