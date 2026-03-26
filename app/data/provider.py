@@ -139,7 +139,7 @@ def _fetch_yfinance(tf: str) -> pd.DataFrame:
     import yfinance as yf
     interval, period = _YF_PARAMS.get(tf, ("1h", "60d"))
     raw = yf.download("GC=F", period=period, interval=interval,
-                      progress=False, auto_adjust=True, multi_level_index=False)
+                      progress=False, auto_adjust=True)
     if isinstance(raw, tuple):
         raw = raw[0]
     if raw.empty:
