@@ -85,6 +85,31 @@ def signal_history(limit: int = 100):
         session.close()
 
 
+# ── Chart data ───────────────────────────────────────────────────────────────
+
+@router.get("/chart/data")
+def chart_data(limit: int = 300):
+    """OHLCV candles للشارت — يرجع من DB أو yfinance مباشرة"""
+    df = load_candles_df()
+    if df.empty:
+        try:
+            df = fetch_gold_ohlcv(period="30d")
+        except Exception as e:
+            raise HTTPException(500, str(e))
+    df = df.tail(limit)
+    candles = []
+    for ts, row in df.iterrows():
+        t = int(ts.timestamp()) if hasattr(ts, "timestamp") else int(ts)
+        candles.append({
+            "time":  t,
+            "open":  round(float(row["open"]),  2),
+            "high":  round(float(row["high"]),  2),
+            "low":   round(float(row["low"]),   2),
+            "close": round(float(row["close"]), 2),
+        })
+    return candles
+
+
 # ── Data management ───────────────────────────────────────────────────────────
 
 @router.post("/data/update")

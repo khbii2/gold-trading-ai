@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .core.database import init_db
-from .api.routes import signals, health
+from .api.routes import signals, health, ui
 
 
 @asynccontextmanager
@@ -32,15 +32,6 @@ app.add_middleware(
     allow_headers  = ["*"],
 )
 
-app.include_router(health.router,   tags=["health"])
-app.include_router(signals.router,  prefix="/api/v1", tags=["signals"])
-
-
-@app.get("/")
-def root():
-    return {
-        "name":    "Gold Trading AI",
-        "version": "0.1.0",
-        "status":  "running",
-        "docs":    "/docs",
-    }
+app.include_router(ui.router,        tags=["ui"])
+app.include_router(health.router,    tags=["health"])
+app.include_router(signals.router,   prefix="/api/v1", tags=["signals"])
