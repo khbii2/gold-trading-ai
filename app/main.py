@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .core.database import init_db
-from .api.routes import signals, health, ui
+from .api.routes import signals, health, ui, live
 
 
 @asynccontextmanager
@@ -34,4 +34,5 @@ app.add_middleware(
 
 app.include_router(ui.router,        tags=["ui"])
 app.include_router(health.router,    tags=["health"])
+app.include_router(live.router,      prefix="/api/v1", tags=["live"])
 app.include_router(signals.router,   prefix="/api/v1", tags=["signals"])
